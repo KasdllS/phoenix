@@ -4,9 +4,7 @@
 #include <list>
 #include <shared_mutex>
 
-namespace phoenix {
-
-namespace thread_safe {
+namespace phoenix::thread_safe {
 
 template <typename T>
 class list {
@@ -31,10 +29,8 @@ class list {
   }
 
   std::list<T> to_list() {
-    std::list<T> ret;
     std::shared_lock<std::shared_mutex> lck(mtx_list_);
-    ret = list_;
-    return ret;
+    return list_;
   }
 
  private:
@@ -42,6 +38,4 @@ class list {
   std::list<T> list_;
 };
 
-}  // namespace thread_safe
-
-}  // namespace phoenix
+}  // namespace phoenix::thread_safe
