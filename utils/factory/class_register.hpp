@@ -35,6 +35,10 @@
  *    constexpr static int type = 0;
  *    UserDefineA() = default;
  * };
+ *
+ * @warning
+ * 如果ClassRegister的构造函数的执行被编译优化掉，不会起到效果。
+ * lambda结合默认构造函数可能会导致这一结果。
  */
 #pragma once
 
@@ -66,4 +70,4 @@ class Register {
   }
 };
 
-}
+}  // namespace phoenix

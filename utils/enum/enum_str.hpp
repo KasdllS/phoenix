@@ -1,5 +1,17 @@
 #pragma once
 
+/**
+ * @file enum_str.hpp
+ * @author sqi
+ * @brief
+ * @version 0.1
+ * @date 2024-01-25
+ *
+ * @copyright Copyright (c) 2024
+ *
+ * 为了能够输出到日志或者其他的枚举转字符的操作
+ */
+
 #include <algorithm>
 #include <list>
 #include <map>

@@ -1,5 +1,17 @@
 #pragma once
 
+/**
+ * @file list.hpp
+ * @author sqi
+ * @brief
+ * @version 0.1
+ * @date 2024-01-25
+ *
+ * @copyright Copyright (c) 2024
+ *
+ * TODO: 集成一些无锁结构
+ */
+
 #include <algorithm>
 #include <list>
 #include <shared_mutex>

@@ -38,5 +38,3 @@ foreach(T ${UNITTEST_TARGETS})
     target_link_libraries(${T} PRIVATE GTest::GTest GTest::Main ${PROJECT_NAME})
     gtest_discover_tests(${T})
 endforeach()
-
-enable_testing()

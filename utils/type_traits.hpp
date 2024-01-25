@@ -1,5 +1,17 @@
 #pragma once
 
+/**
+ * @file type_traits.hpp
+ * @author sqi
+ * @brief
+ * @version 0.1
+ * @date 2024-01-25
+ *
+ * @copyright Copyright (c) 2024
+ *
+ * 一些C++17以上标准可能已经有了的元编程所需的组件
+ */
+
 #include <map>
 #include <vector>
 
@@ -64,17 +76,5 @@ struct type_cvt<T, std::enable_if_t<is_string_v<T>>> {
   using src_t = T;
   using dst_t = std::string;
 };
-
-// template <typename T>
-// struct map_type {};
-
-// template <typename... T>
-// struct map_type<std::map<T...>> {
-//   using key_t = typename type_expansion<T...>::first_t;
-//   using value_t = typename type_expansion<T...>::left_expansion::first_t;
-// };
-
-// template<typename T>
-// struct vector_type {};
 
 }  // namespace phoenix
