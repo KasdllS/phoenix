@@ -1,4 +1,4 @@
-#include "utils/meta/node.h"
+#include "utils/meta/node.hpp"
 
 #include <gtest/gtest.h>
 
@@ -87,4 +87,31 @@ TEST(Node, Child) {
   EXPECT_EQ(n[2]["test/test"].as<bool>(), false);
   EXPECT_EQ(n.isVector(), true);
   EXPECT_EQ(n[2].isMap(), true);
+}
+
+TEST(Node, AsMeta) {
+  Node n;
+  n = 1.23f;
+  auto meta = n.as<MetaImpl<float>>();
+  EXPECT_EQ(meta->val_, 1.23f);
+}
+
+TEST(Node, MakeBool) {
+  auto n = makeNode<bool>(false, false);
+  EXPECT_EQ(n.as<bool>(), false);
+  n = true;
+  EXPECT_EQ(n.as<bool>(), true);
+
+  bool b = false;
+  n = makeNode<bool&>(b, false);
+  b = true;
+  EXPECT_EQ(n.as<bool&>(), true);
+}
+
+TEST(Node, Range) {
+  auto n = makeNode<float>(1.23f, 0.123f, 0.224f, 0.222f);
+  auto meta = n.as<MetaImpl<float>>();
+  EXPECT_EQ(meta->min_, 0.123f);
+  EXPECT_EQ(meta->max_, 0.224f);
+  EXPECT_EQ(meta->step_, 0.222f);
 }

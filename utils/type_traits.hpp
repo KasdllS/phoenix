@@ -36,6 +36,9 @@ template <typename T>
 constexpr bool is_integer_v = std::is_integral_v<T> && !std::is_same_v<T, bool>;
 
 template <typename T>
+constexpr bool is_numeric_v = is_integer_v<T> || std::is_floating_point_v<T>;
+
+template <typename T>
 constexpr bool is_string_v =
     std::is_same_v<const char*, T> || std::is_same_v<std::string, T>;
 

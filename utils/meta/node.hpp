@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file node.h
+ * @file node_define.h
  * @author sqi
  * @brief
  * @version 0.1
@@ -13,12 +13,11 @@
 
 #include <assert.h>
 
-#include <iostream>
 #include <map>
 #include <memory>
 #include <vector>
 
-#include "utils/meta/define.h"
+#include "utils/meta/meta_define.hpp"
 #include "utils/type_traits.hpp"
 
 namespace phoenix {
@@ -29,9 +28,6 @@ using type_check_t =
                          std::is_same_v<std::string, U> ||
                          std::is_same_v<const char*, U>,
                      bool>;
-
-template <typename T>
-using sign_t = std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
 
 struct Elem {
   virtual ~Elem() = default;
@@ -47,7 +43,7 @@ class Node {
   };
 
  public:
-  Node();
+  Node() = default;
 
   template <typename T, type_check_t<T> = true>
   Node(T val);
@@ -92,12 +88,18 @@ class Node {
   Node& operator[](const std::string& key);
   Node& operator[](const std::size_t idx);
 
-  template <typename T>
+  template <typename T,
+            std::enable_if_t<!std::is_base_of_v<Meta, T>, bool> = true>
   T as() const;
+
+  template <typename T,
+            std::enable_if_t<std::is_base_of_v<Meta, T>, bool> = true>
+  T* as() const;
 
   std::string name_;
 
  private:
+  void assign(Meta* meta);
   bool delete_if(const ElemType type);
 
   template <typename T>
@@ -126,6 +128,8 @@ class Node {
   }
 
   std::shared_ptr<Elem> elem_;
+
+  friend class Maker;
 };
 
 struct ElemValue : public Elem {
@@ -156,6 +160,32 @@ Node::Node(T val) {
   elem->meta_ = new MetaType(val);
 }
 
+bool Node::isValue() const {
+  if (!elem_) {
+    return false;
+  }
+
+  return elem_->type_ == static_cast<int>(ElemType::Value);
+}
+
+bool Node::isMap() const {
+  if (!elem_) {
+    return false;
+  }
+
+  return elem_->type_ == static_cast<int>(ElemType::Map);
+}
+
+bool Node::isVector() const {
+  if (!elem_) {
+    return false;
+  }
+
+  return elem_->type_ == static_cast<int>(ElemType::Vector);
+}
+
+bool Node::isValid() const { return elem_ != nullptr; }
+
 template <typename T, type_check_t<T> = true>
 Node& Node::operator=(T val) {
   using MetaType = MetaImpl<typename type_cvt<std::decay_t<T>>::dst_t>;
@@ -166,7 +196,6 @@ Node& Node::operator=(T val) {
   }
   auto& meta = std::dynamic_pointer_cast<ElemValue>(elem_)->meta_;
   if (!meta) {
-    std::cout << val << std::endl;
     meta = new MetaType(val);
   } else if (!check_type<T>(meta->type_)) {
     delete meta;
@@ -249,13 +278,158 @@ Node& Node::operator=(const T& vals) {
   return *this;
 }
 
-template <typename T>
+Node& Node::operator[](const std::string& key) {
+  assert(isValid() &&
+         static_cast<Node::ElemType>(elem_->type_) == Node::ElemType::Map);
+  return std::dynamic_pointer_cast<ElemMap>(elem_)->nodes_[key];
+}
+
+Node& Node::operator[](const std::size_t idx) {
+  assert(isValid() &&
+         static_cast<Node::ElemType>(elem_->type_) == Node::ElemType::Vector);
+  auto elem = std::dynamic_pointer_cast<ElemVec>(elem_);
+  assert(idx < elem->nodes_.size());
+  return elem->nodes_[idx];
+}
+
+template <typename T,
+          std::enable_if_t<!std::is_base_of_v<Meta, T>, bool> = true>
 T Node::as() const {
-  using MetaType = MetaImpl<typename type_cvt<std::decay_t<T>>::dst_t>;
+  using Type = typename type_cvt<std::decay_t<T>>::dst_t;
+  using DstType = std::conditional_t<std::is_reference_v<T>,
+                                     std::add_lvalue_reference_t<Type>, Type>;
+  using MetaType = MetaImpl<DstType>;
 
   assert(isValid());
   auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
-  return ((MetaType*)(elem->meta_))->val_;
+  auto meta = (MetaType*)(elem->meta_);
+  assert(std::is_reference_v<DstType> == meta->is_ref_);
+  return meta->val_;
 }
+
+template <typename T, std::enable_if_t<std::is_base_of_v<Meta, T>, bool> = true>
+T* Node::as() const {
+  if (!elem_ || elem_->type_ != static_cast<int>(ElemType::Value)) {
+    return nullptr;
+  }
+
+  return static_cast<T*>(std::dynamic_pointer_cast<ElemValue>(elem_)->meta_);
+}
+
+void Node::assign(Meta* meta) {
+  if (delete_if(ElemType::Value)) {
+    elem_ = std::make_shared<ElemValue>();
+  }
+
+  auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
+  if (elem->meta_) {
+    delete elem->meta_;
+  }
+  elem->meta_ = meta;
+}
+
+bool Node::delete_if(const ElemType type) {
+  if (elem_ && elem_->type_ != static_cast<int>(type)) {
+    elem_ = nullptr;
+  }
+
+  return elem_ == nullptr;
+}
+
+struct Maker {
+ protected:
+  static Node make(Meta* meta) {
+    Node n;
+    auto elem = std::make_shared<ElemValue>();
+    elem->type_ = static_cast<int>(Node::ElemType::Value);
+    elem->meta_ = meta;
+    n.elem_ = elem;
+    return n;
+  }
+};
+
+template <typename T, typename Enable = void>
+struct MakeNode {};
+
+template <typename T>
+struct MakeNode<T, std::enable_if_t<std::is_same_v<std::decay_t<T>, bool>>>
+    : public Maker {
+  /**
+   * @brief 可用于向check box传递初始数据
+   *
+   * @tparam T bool
+   * @param val
+   * @param editable 是否可进行编辑
+   * @return Node
+   */
+  Node operator()(T val, bool editable = default_editable) const {
+    return Maker::make(new MetaImpl<T>(val, editable));
+  }
+};
+
+template <typename T>
+struct MakeNode<T, std::enable_if_t<std::is_enum_v<std::decay_t<T>>>>
+    : public Maker {
+  /**
+   * @brief 可用于向combo box传递初始数据
+   *
+   * @tparam T enum class/enum
+   * @param val
+   * @param combo 枚举/字符描述对。
+   * @param editable 是否可进行编辑
+   * @return Node
+   */
+  Node operator()(typename MetaImpl<T>::Type val,
+                  const std::map<int64_t, std::string>& combo,
+                  bool editable = default_editable) const {
+    return Maker::make(new MetaImpl<T>(val, combo, editable));
+  }
+};
+
+template <typename T>
+struct MakeNode<T, std::enable_if_t<is_numeric_v<std::decay_t<T>>>>
+    : public Maker {
+  /**
+   * @brief 可用于向spin box传递初始数据
+   *
+   * @tparam T 整数/浮点数等类型
+   * @param val
+   * @param min 下限
+   * @param max 上限
+   * @param step 调整步长
+   * @param editable 是否可进行编辑
+   * @return Node
+   */
+  Node operator()(
+      typename MetaImpl<T>::ValueType val,
+      typename MetaImpl<T>::ParamType min =
+          std::numeric_limits<typename MetaImpl<T>::ParamType>::min(),
+      typename MetaImpl<T>::ParamType max =
+          std::numeric_limits<typename MetaImpl<T>::ParamType>::max(),
+      typename MetaImpl<T>::ParamType step = MetaImpl<T>::default_step,
+      bool editable = default_editable) const {
+    return Maker::make(new MetaImpl<T>(val, min, max, step, editable));
+  }
+};
+
+template <typename T>
+struct MakeNode<T, std::enable_if_t<is_string_v<std::decay_t<T>>>>
+    : public Maker {
+  /**
+   * @brief 可用于标签、字符输入框等
+   *
+   * @tparam T 字符串类型(const char* / std::string)
+   * @param val 字符
+   * @param editable 是否可进行编辑
+   * @return Node
+   */
+  Node operator()(typename MetaImpl<T>::ParamType val,
+                  bool editable = default_editable) const {
+    return Maker::make(new MetaImpl<T>(val, editable));
+  }
+};
+
+template <typename T>
+inline const static MakeNode<T> makeNode;
 
 }  // namespace phoenix
