@@ -34,6 +34,8 @@ struct Meta {
 
   Meta(const Type type, bool editable)
       : type_(type), editable_(editable), is_ref_(false) {}
+  virtual ~Meta() = default;
+  virtual std::shared_ptr<Meta> clone() const = 0;
 
   Type type_;
   bool editable_;
@@ -53,6 +55,11 @@ struct MetaImpl<T, std::enable_if_t<std::is_same_v<std::decay_t<T>, bool>>>
     is_ref_ = std::is_reference_v<T>;
   }
 
+  std::shared_ptr<Meta> clone() const override {
+    auto ret = std::make_shared<MetaImpl<T>>(*this);
+    return std::dynamic_pointer_cast<Meta>(ret);
+  }
+
   T val_;
 };
 
@@ -64,6 +71,11 @@ struct MetaImpl<T, std::enable_if_t<std::is_enum_v<std::decay_t<T>>>>
   MetaImpl(Type val, const std::map<int64_t, std::string>& combo, bool editable)
       : Meta(Meta::Type::Enum, editable), combo_(combo), val_(val) {
     is_ref_ = std::is_reference_v<Type>;
+  }
+
+  std::shared_ptr<Meta> clone() const override {
+    auto ret = std::make_shared<MetaImpl<T>>(*this);
+    return std::dynamic_pointer_cast<Meta>(ret);
   }
 
   Type val_;
@@ -92,6 +104,11 @@ struct MetaImpl<T, std::enable_if_t<is_numeric_v<std::decay_t<T>>>>
     is_ref_ = std::is_reference_v<ValueType>;
   }
 
+  std::shared_ptr<Meta> clone() const override {
+    auto ret = std::make_shared<MetaImpl<T>>(*this);
+    return std::dynamic_pointer_cast<Meta>(ret);
+  }
+
   ValueType val_;
   ParamType min_, max_, step_;
 };
@@ -110,6 +127,11 @@ struct MetaImpl<T, std::enable_if_t<is_string_v<std::decay_t<T>>>>
   MetaImpl(ParamType val, bool editable = default_editable)
       : Meta(Meta::Type::String, editable), val_(val) {
     is_ref_ = std::is_reference_v<ValueType>;
+  }
+
+  std::shared_ptr<Meta> clone() const override {
+    auto ret = std::make_shared<MetaImpl<T>>(*this);
+    return std::dynamic_pointer_cast<Meta>(ret);
   }
 
   ValueType val_;

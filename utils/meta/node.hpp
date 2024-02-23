@@ -30,7 +30,10 @@ using type_check_t =
                      bool>;
 
 struct Elem {
+  using Ptr = std::shared_ptr<Elem>;
   virtual ~Elem() = default;
+  virtual Elem::Ptr clone() const = 0;
+
   int type_;
 };
 
@@ -46,7 +49,9 @@ class Node {
   Node() = default;
 
   template <typename T, type_check_t<T> = true>
-  Node(T val);
+  explicit Node(T val);
+
+  Node clone() const;
 
   bool isValue() const;
   bool isMap() const;
@@ -94,12 +99,12 @@ class Node {
 
   template <typename T,
             std::enable_if_t<std::is_base_of_v<Meta, T>, bool> = true>
-  T* as() const;
+  T as() const;
 
   std::string name_;
 
  private:
-  void assign(Meta* meta);
+  void assign(const std::shared_ptr<Meta>& meta);
   bool delete_if(const ElemType type);
 
   template <typename T>
@@ -133,20 +138,36 @@ class Node {
 };
 
 struct ElemValue : public Elem {
-  ElemValue() : meta_(nullptr) {}
-  ~ElemValue() override {
-    delete meta_;
-    meta_ = nullptr;
+  Elem::Ptr clone() const override {
+    auto ret = std::make_shared<ElemValue>();
+    ret->meta_ = meta_->clone();
+    return std::dynamic_pointer_cast<Elem>(ret);
   }
 
-  Meta* meta_;
+  std::shared_ptr<Meta> meta_;
 };
 
 struct ElemMap : public Elem {
+  Elem::Ptr clone() const override {
+    auto ret = std::make_shared<ElemMap>();
+    for (auto& [name, node] : nodes_) {
+      ret->nodes_.emplace(name, node.clone());
+    }
+    return std::dynamic_pointer_cast<Elem>(ret);
+  }
+
   std::map<std::string, Node, std::less<>> nodes_;
 };
 
 struct ElemVec : public Elem {
+  Elem::Ptr clone() const override {
+    auto ret = std::make_shared<ElemVec>();
+    ret->nodes_.reserve(nodes_.size());
+    for (auto& node : nodes_) {
+      ret->nodes_.emplace_back(node.clone());
+    }
+    return std::dynamic_pointer_cast<Elem>(ret);
+  }
   std::vector<Node> nodes_;
 };
 
@@ -157,7 +178,14 @@ Node::Node(T val) {
   elem_ = std::make_shared<ElemValue>();
   elem_->type_ = static_cast<int>(ElemType::Value);
   auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
-  elem->meta_ = new MetaType(val);
+  elem->meta_ = std::make_shared<MetaType>(val);
+}
+
+Node Node::clone() const {
+  Node n;
+  n.name_ = name_;
+  n.elem_ = elem_->clone();
+  return n;
 }
 
 bool Node::isValue() const {
@@ -194,14 +222,13 @@ Node& Node::operator=(T val) {
     elem_ = std::make_shared<ElemValue>();
     elem_->type_ = static_cast<int>(ElemType::Value);
   }
-  auto& meta = std::dynamic_pointer_cast<ElemValue>(elem_)->meta_;
+  auto& meta = std::static_pointer_cast<ElemValue>(elem_)->meta_;
   if (!meta) {
-    meta = new MetaType(val);
+    meta = std::make_shared<MetaType>(val);
   } else if (!check_type<T>(meta->type_)) {
-    delete meta;
-    meta = new MetaType(val);
+    meta = std::make_shared<MetaType>(val);
   } else {
-    ((MetaType*)meta)->val_ = val;
+    std::dynamic_pointer_cast<MetaType>(meta)->val_ = val;
   }
   return *this;
 }
@@ -302,29 +329,27 @@ T Node::as() const {
 
   assert(isValid());
   auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
-  auto meta = (MetaType*)(elem->meta_);
+  auto meta = std::static_pointer_cast<MetaType>(elem->meta_);
   assert(std::is_reference_v<DstType> == meta->is_ref_);
   return meta->val_;
 }
 
 template <typename T, std::enable_if_t<std::is_base_of_v<Meta, T>, bool> = true>
-T* Node::as() const {
+T Node::as() const {
   if (!elem_ || elem_->type_ != static_cast<int>(ElemType::Value)) {
-    return nullptr;
+    abort();
   }
 
-  return static_cast<T*>(std::dynamic_pointer_cast<ElemValue>(elem_)->meta_);
+  return *std::static_pointer_cast<T>(
+      std::dynamic_pointer_cast<ElemValue>(elem_)->meta_);
 }
 
-void Node::assign(Meta* meta) {
+void Node::assign(const std::shared_ptr<Meta>& meta) {
   if (delete_if(ElemType::Value)) {
     elem_ = std::make_shared<ElemValue>();
   }
 
   auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
-  if (elem->meta_) {
-    delete elem->meta_;
-  }
   elem->meta_ = meta;
 }
 
@@ -338,7 +363,7 @@ bool Node::delete_if(const ElemType type) {
 
 struct Maker {
  protected:
-  static Node make(Meta* meta) {
+  static Node make(const std::shared_ptr<Meta>& meta) {
     Node n;
     auto elem = std::make_shared<ElemValue>();
     elem->type_ = static_cast<int>(Node::ElemType::Value);
@@ -363,7 +388,7 @@ struct MakeNode<T, std::enable_if_t<std::is_same_v<std::decay_t<T>, bool>>>
    * @return Node
    */
   Node operator()(T val, bool editable = default_editable) const {
-    return Maker::make(new MetaImpl<T>(val, editable));
+    return Maker::make(std::make_shared<MetaImpl<T>>(val, editable));
   }
 };
 
@@ -382,7 +407,7 @@ struct MakeNode<T, std::enable_if_t<std::is_enum_v<std::decay_t<T>>>>
   Node operator()(typename MetaImpl<T>::Type val,
                   const std::map<int64_t, std::string>& combo,
                   bool editable = default_editable) const {
-    return Maker::make(new MetaImpl<T>(val, combo, editable));
+    return Maker::make(std::make_shared<MetaImpl<T>>(val, combo, editable));
   }
 };
 
@@ -408,7 +433,8 @@ struct MakeNode<T, std::enable_if_t<is_numeric_v<std::decay_t<T>>>>
           std::numeric_limits<typename MetaImpl<T>::ParamType>::max(),
       typename MetaImpl<T>::ParamType step = MetaImpl<T>::default_step,
       bool editable = default_editable) const {
-    return Maker::make(new MetaImpl<T>(val, min, max, step, editable));
+    return Maker::make(
+        std::make_shared<MetaImpl<T>>(val, min, max, step, editable));
   }
 };
 
@@ -425,7 +451,7 @@ struct MakeNode<T, std::enable_if_t<is_string_v<std::decay_t<T>>>>
    */
   Node operator()(typename MetaImpl<T>::ParamType val,
                   bool editable = default_editable) const {
-    return Maker::make(new MetaImpl<T>(val, editable));
+    return Maker::make(std::make_shared<MetaImpl<T>>(val, editable));
   }
 };
 

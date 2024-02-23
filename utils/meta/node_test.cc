@@ -93,7 +93,7 @@ TEST(Node, AsMeta) {
   Node n;
   n = 1.23f;
   auto meta = n.as<MetaImpl<float>>();
-  EXPECT_EQ(meta->val_, 1.23f);
+  EXPECT_EQ(meta.val_, 1.23f);
 }
 
 TEST(Node, MakeBool) {
@@ -111,7 +111,20 @@ TEST(Node, MakeBool) {
 TEST(Node, Range) {
   auto n = makeNode<float>(1.23f, 0.123f, 0.224f, 0.222f);
   auto meta = n.as<MetaImpl<float>>();
-  EXPECT_EQ(meta->min_, 0.123f);
-  EXPECT_EQ(meta->max_, 0.224f);
-  EXPECT_EQ(meta->step_, 0.222f);
+  EXPECT_EQ(meta.min_, 0.123f);
+  EXPECT_EQ(meta.max_, 0.224f);
+  EXPECT_EQ(meta.step_, 0.222f);
+}
+
+TEST(Node, Clone) {
+  Node n, oth;
+  n = 1.23f;
+  oth = n.clone();
+  oth = 2.34f;
+  auto meta = n.as<MetaImpl<float>>();
+  EXPECT_EQ(meta.val_, 1.23f);
+  oth = n;
+  oth = 2.34f;
+  meta = n.as<MetaImpl<float>>();
+  EXPECT_EQ(meta.val_, 2.34f);
 }
