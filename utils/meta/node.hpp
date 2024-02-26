@@ -55,6 +55,8 @@ class Node {
   Node child();
 
   bool isValue() const;
+  Meta::Type metaType() const;
+
   bool isMap() const;
   bool isVector() const;
 
@@ -103,7 +105,7 @@ class Node {
             std::enable_if_t<std::is_base_of_v<Meta, T>, bool> = true>
   T as() const;
 
-  std::string name_;
+  std::string label_;
 
  private:
   void assign(const std::shared_ptr<Meta>& meta);
@@ -201,7 +203,7 @@ Node::Node(T val) {
 
 Node Node::clone() const {
   Node n;
-  n.name_ = name_;
+  n.label_ = label_;
   if (isValid()) {
     *(n.elem_) = (*elem_)->clone();
   }
@@ -225,6 +227,11 @@ bool Node::isValue() const {
   }
 
   return (*elem_)->type_ == static_cast<int>(ElemType::Value);
+}
+
+Meta::Type Node::metaType() const {
+  assert((*elem_) && (*elem_)->type_ == static_cast<int>(ElemType::Value));
+  return dynamic_cast<ElemValue*>(*elem_)->meta_->type_;
 }
 
 bool Node::isMap() const {
