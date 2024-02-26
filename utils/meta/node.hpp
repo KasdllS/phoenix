@@ -30,7 +30,7 @@ using type_check_t =
                      bool>;
 
 struct Elem {
-  using Ptr = std::shared_ptr<Elem>;
+  using Ptr = Elem*;
   virtual ~Elem() = default;
   virtual Elem::Ptr clone() const = 0;
 
@@ -46,17 +46,19 @@ class Node {
   };
 
  public:
-  Node() = default;
+  Node();
 
   template <typename T, type_check_t<T> = true>
   explicit Node(T val);
 
   Node clone() const;
+  Node child();
 
   bool isValue() const;
   bool isMap() const;
   bool isVector() const;
 
+  bool isNull() const;
   bool isValid() const;
 
   template <typename T, type_check_t<T> = true>
@@ -132,16 +134,17 @@ class Node {
     return false;
   }
 
-  std::shared_ptr<Elem> elem_;
+  std::shared_ptr<Elem*> elem_;
+  std::shared_ptr<Node> child_;
 
   friend class Maker;
 };
 
 struct ElemValue : public Elem {
   Elem::Ptr clone() const override {
-    auto ret = std::make_shared<ElemValue>();
+    auto ret = new ElemValue;
     ret->meta_ = meta_->clone();
-    return std::dynamic_pointer_cast<Elem>(ret);
+    return ret;
   }
 
   std::shared_ptr<Meta> meta_;
@@ -149,11 +152,11 @@ struct ElemValue : public Elem {
 
 struct ElemMap : public Elem {
   Elem::Ptr clone() const override {
-    auto ret = std::make_shared<ElemMap>();
+    auto ret = new ElemMap;
     for (auto& [name, node] : nodes_) {
       ret->nodes_.emplace(name, node.clone());
     }
-    return std::dynamic_pointer_cast<Elem>(ret);
+    return ret;
   }
 
   std::map<std::string, Node, std::less<>> nodes_;
@@ -161,68 +164,98 @@ struct ElemMap : public Elem {
 
 struct ElemVec : public Elem {
   Elem::Ptr clone() const override {
-    auto ret = std::make_shared<ElemVec>();
+    auto ret = new ElemVec;
     ret->nodes_.reserve(nodes_.size());
     for (auto& node : nodes_) {
       ret->nodes_.emplace_back(node.clone());
     }
-    return std::dynamic_pointer_cast<Elem>(ret);
+    return ret;
   }
   std::vector<Node> nodes_;
 };
+
+Node::Node()
+    : elem_(std::shared_ptr<Elem*>(new(Elem*)(nullptr), [](Elem** p) {
+        if (*p) {
+          delete *p;
+        }
+        delete p;
+      })) {}
 
 template <typename T, type_check_t<T> = true>
 Node::Node(T val) {
   using MetaType = MetaImpl<typename type_cvt<std::decay_t<T>>::dst_t>;
 
-  elem_ = std::make_shared<ElemValue>();
-  elem_->type_ = static_cast<int>(ElemType::Value);
-  auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
-  elem->meta_ = std::make_shared<MetaType>(val);
+  elem_ = std::shared_ptr<Elem*>(new (Elem*)(nullptr), [](Elem** p) {
+    if (*p) {
+      delete *p;
+    }
+    delete p;
+  });
+  auto& elem = *elem_;
+  elem = new ElemValue;
+  elem->type_ = static_cast<int>(ElemType::Value);
+  auto e = dynamic_cast<ElemValue*>(elem);
+  e->meta_ = std::make_shared<MetaType>(val);
 }
 
 Node Node::clone() const {
   Node n;
   n.name_ = name_;
-  n.elem_ = elem_->clone();
+  if (isValid()) {
+    *(n.elem_) = (*elem_)->clone();
+  }
+  if (child_ && child_->isValid()) {
+    n.child_ = std::make_shared<Node>();
+    *(n.child_) = child_->clone();
+  }
   return n;
 }
 
+Node Node::child() {
+  if (!child_) {
+    child_ = std::make_shared<Node>();
+  }
+  return *child_;
+}
+
 bool Node::isValue() const {
-  if (!elem_) {
+  if (!(*elem_)) {
     return false;
   }
 
-  return elem_->type_ == static_cast<int>(ElemType::Value);
+  return (*elem_)->type_ == static_cast<int>(ElemType::Value);
 }
 
 bool Node::isMap() const {
-  if (!elem_) {
+  if (!(*elem_)) {
     return false;
   }
 
-  return elem_->type_ == static_cast<int>(ElemType::Map);
+  return (*elem_)->type_ == static_cast<int>(ElemType::Map);
 }
 
 bool Node::isVector() const {
-  if (!elem_) {
+  if (!(*elem_)) {
     return false;
   }
 
-  return elem_->type_ == static_cast<int>(ElemType::Vector);
+  return (*elem_)->type_ == static_cast<int>(ElemType::Vector);
 }
 
-bool Node::isValid() const { return elem_ != nullptr; }
+bool Node::isNull() const { return !(*elem_) && !child_; }
+
+bool Node::isValid() const { return (*elem_) != nullptr; }
 
 template <typename T, type_check_t<T> = true>
 Node& Node::operator=(T val) {
   using MetaType = MetaImpl<typename type_cvt<std::decay_t<T>>::dst_t>;
 
   if (delete_if(ElemType::Value)) {
-    elem_ = std::make_shared<ElemValue>();
-    elem_->type_ = static_cast<int>(ElemType::Value);
+    *elem_ = new ElemValue;
+    (*elem_)->type_ = static_cast<int>(ElemType::Value);
   }
-  auto& meta = std::static_pointer_cast<ElemValue>(elem_)->meta_;
+  auto& meta = dynamic_cast<ElemValue*>(*elem_)->meta_;
   if (!meta) {
     meta = std::make_shared<MetaType>(val);
   } else if (!check_type<T>(meta->type_)) {
@@ -241,10 +274,10 @@ template <
                      bool> = true>
 Node& Node::operator=(const T& vals) {
   if (delete_if(ElemType::Map)) {
-    elem_ = std::make_shared<ElemMap>();
-    elem_->type_ = static_cast<int>(ElemType::Map);
+    *elem_ = new ElemMap;
+    (*elem_)->type_ = static_cast<int>(ElemType::Map);
   }
-  auto elem = std::dynamic_pointer_cast<ElemMap>(elem_);
+  auto elem = dynamic_cast<ElemMap*>(*elem_);
   elem->nodes_.clear();
   for (auto iter = std::begin(vals); iter != std::end(vals); ++iter) {
     elem->nodes_.emplace(iter->first, iter->second);
@@ -260,10 +293,10 @@ template <
                      bool> = true>
 Node& Node::operator=(const T& vals) {
   if (delete_if(ElemType::Map)) {
-    elem_ = std::make_shared<ElemMap>();
-    elem_->type_ = static_cast<int>(ElemType::Map);
+    *elem_ = new ElemMap;
+    (*elem_)->type_ = static_cast<int>(ElemType::Map);
   }
-  auto elem = std::dynamic_pointer_cast<ElemMap>(elem_);
+  auto elem = dynamic_cast<ElemMap*>(*elem_);
   elem->nodes_.clear();
   for (auto iter = std::begin(vals); iter != std::end(vals); ++iter) {
     elem->nodes_.emplace(iter->first, Node(iter->second));
@@ -277,10 +310,10 @@ template <typename T,
                            bool> = true>
 Node& Node::operator=(const T& vals) {
   if (delete_if(ElemType::Vector)) {
-    elem_ = std::make_shared<ElemVec>();
-    elem_->type_ = static_cast<int>(ElemType::Vector);
+    *elem_ = new ElemVec;
+    (*elem_)->type_ = static_cast<int>(ElemType::Vector);
   }
-  auto elem = std::dynamic_pointer_cast<ElemVec>(elem_);
+  auto elem = dynamic_cast<ElemVec*>(*elem_);
   elem->nodes_.clear();
   for (auto iter = std::begin(vals); iter != std::end(vals); ++iter) {
     elem->nodes_.emplace_back(Node(*iter));
@@ -294,10 +327,10 @@ template <typename T,
                            bool> = true>
 Node& Node::operator=(const T& vals) {
   if (delete_if(ElemType::Vector)) {
-    elem_ = std::make_shared<ElemVec>();
-    elem_->type_ = static_cast<int>(ElemType::Vector);
+    *elem_ = new ElemVec;
+    (*elem_)->type_ = static_cast<int>(ElemType::Vector);
   }
-  auto elem = std::dynamic_pointer_cast<ElemVec>(elem_);
+  auto elem = dynamic_cast<ElemVec*>(*elem_);
   elem->nodes_.clear();
   for (auto iter = std::begin(vals); iter != std::end(vals); ++iter) {
     elem->nodes_.emplace_back(*iter);
@@ -307,14 +340,14 @@ Node& Node::operator=(const T& vals) {
 
 Node& Node::operator[](const std::string& key) {
   assert(isValid() &&
-         static_cast<Node::ElemType>(elem_->type_) == Node::ElemType::Map);
-  return std::dynamic_pointer_cast<ElemMap>(elem_)->nodes_[key];
+         static_cast<Node::ElemType>((*elem_)->type_) == Node::ElemType::Map);
+  return dynamic_cast<ElemMap*>(*elem_)->nodes_[key];
 }
 
 Node& Node::operator[](const std::size_t idx) {
-  assert(isValid() &&
-         static_cast<Node::ElemType>(elem_->type_) == Node::ElemType::Vector);
-  auto elem = std::dynamic_pointer_cast<ElemVec>(elem_);
+  assert(isValid() && static_cast<Node::ElemType>((*elem_)->type_) ==
+                          Node::ElemType::Vector);
+  auto elem = dynamic_cast<ElemVec*>(*elem_);
   assert(idx < elem->nodes_.size());
   return elem->nodes_[idx];
 }
@@ -328,7 +361,7 @@ T Node::as() const {
   using MetaType = MetaImpl<DstType>;
 
   assert(isValid());
-  auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
+  auto elem = dynamic_cast<ElemValue*>(*elem_);
   auto meta = std::static_pointer_cast<MetaType>(elem->meta_);
   assert(std::is_reference_v<DstType> == meta->is_ref_);
   return meta->val_;
@@ -336,39 +369,39 @@ T Node::as() const {
 
 template <typename T, std::enable_if_t<std::is_base_of_v<Meta, T>, bool> = true>
 T Node::as() const {
-  if (!elem_ || elem_->type_ != static_cast<int>(ElemType::Value)) {
+  if ((*elem_)->type_ != static_cast<int>(ElemType::Value)) {
     abort();
   }
 
-  return *std::static_pointer_cast<T>(
-      std::dynamic_pointer_cast<ElemValue>(elem_)->meta_);
+  return *std::static_pointer_cast<T>(dynamic_cast<ElemValue*>(*elem_)->meta_);
 }
 
 void Node::assign(const std::shared_ptr<Meta>& meta) {
   if (delete_if(ElemType::Value)) {
-    elem_ = std::make_shared<ElemValue>();
+    (*elem_) = new ElemValue;
   }
 
-  auto elem = std::dynamic_pointer_cast<ElemValue>(elem_);
+  auto elem = dynamic_cast<ElemValue*>(*elem_);
   elem->meta_ = meta;
 }
 
 bool Node::delete_if(const ElemType type) {
-  if (elem_ && elem_->type_ != static_cast<int>(type)) {
-    elem_ = nullptr;
+  if (auto& elem = *elem_; elem && elem->type_ != static_cast<int>(type)) {
+    delete elem;
+    elem = nullptr;
   }
 
-  return elem_ == nullptr;
+  return (*elem_) == nullptr;
 }
 
 struct Maker {
  protected:
   static Node make(const std::shared_ptr<Meta>& meta) {
     Node n;
-    auto elem = std::make_shared<ElemValue>();
+    auto elem = new ElemValue;
     elem->type_ = static_cast<int>(Node::ElemType::Value);
     elem->meta_ = meta;
-    n.elem_ = elem;
+    *(n.elem_) = elem;
     return n;
   }
 };

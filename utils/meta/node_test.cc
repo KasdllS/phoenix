@@ -128,3 +128,14 @@ TEST(Node, Clone) {
   meta = n.as<MetaImpl<float>>();
   EXPECT_EQ(meta.val_, 2.34f);
 }
+
+TEST(Node, NodeChild) {
+  Node n;
+  Node c = n.child();
+  c = 1.23f;
+  EXPECT_EQ(n.child().as<float>(), 1.23f);
+  Node oth = n.clone();
+  oth.child() = 2.24f;
+  EXPECT_EQ(n.child().as<float>(), 1.23f);
+  EXPECT_EQ(oth.child().as<float>(), 2.24f);
+}
