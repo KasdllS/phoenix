@@ -55,6 +55,8 @@ class Node {
   Node child();
 
   bool isValue() const;
+  bool isEditable() const;
+  bool isReference() const;
   Meta::Type metaType() const;
 
   bool isMap() const;
@@ -227,6 +229,16 @@ bool Node::isValue() const {
   }
 
   return (*elem_)->type_ == static_cast<int>(ElemType::Value);
+}
+
+bool Node::isEditable() const {
+  assert((*elem_) && (*elem_)->type_ == static_cast<int>(ElemType::Value));
+  return dynamic_cast<ElemValue*>(*elem_)->meta_->editable_;
+}
+
+bool Node::isReference() const {
+  assert((*elem_) && (*elem_)->type_ == static_cast<int>(ElemType::Value));
+  return dynamic_cast<ElemValue*>(*elem_)->meta_->is_ref_;
 }
 
 Meta::Type Node::metaType() const {
