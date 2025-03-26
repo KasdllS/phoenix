@@ -66,6 +66,23 @@ class Register {
   }
 };
 
+template <class Factory, class Derived, typename... Args>
+class RegisterWithArgs {
+ public:
+  using FactoryT = typename Factory::InstT;
+  using BaseT = typename FactoryT::BaseT;
+
+  using BasePtr = typename FactoryT::template PtrT<BaseT>;
+  using DerivedPtr = typename FactoryT::template PtrT<Derived>;
+
+  RegisterWithArgs() {
+    Factory::instance().RegisterCreator(
+        Derived::type, [](Args&&... args) -> BasePtr {
+          return DerivedPtr(new Derived(std::forward<Args>(args)...));
+        });
+  }
+};
+
 template <class Register>
 class FunctorRegister {
  public:

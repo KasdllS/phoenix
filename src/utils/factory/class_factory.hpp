@@ -15,6 +15,11 @@ template <typename Key,
           class ProdCreator = Ptr<Prod> (*)()>
 class ClassFactory : public noncopyable, public nonmovable {
  public:
+  template <typename T>
+  using PtrT = Ptr<T>;
+
+  using BaseT = Prod;
+
   bool RegisterCreator(Key k, ProdCreator creator) {
     return creators_.insert(std::make_pair(k, creator)).second;
   }

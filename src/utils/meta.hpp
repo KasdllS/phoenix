@@ -221,8 +221,25 @@ class Node {
 
   template <typename T>
   T extra() {
-    fassert(typeid(T) == child_->extra_.type());
+    auto& extra = child_->extra_;
+    if (!extra.has_value() || typeid(T) != extra.type()) {
+      child_->extra_ = std::decay_t<T>();
+    }
     return std::any_cast<T>(child_->extra_);
+  }
+
+  template <typename T>
+  const T extra() const {
+    auto& extra = child_->extra_;
+    if (!extra.has_value()) {
+      child_->extra_ = std::decay_t<T>();
+    }
+
+    if (typeid(T) != extra.type()) {
+      throw std::bad_cast();
+    }
+
+    return std::any_cast<const T>(child_->extra_);
   }
 
   template <typename T>

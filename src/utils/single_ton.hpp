@@ -7,6 +7,8 @@
 template <typename T>
 class SingleTon : private T {
  public:
+  using InstT = T;
+
   static T& instance() {
     static_assert(std::is_copy_constructible_v<T> == false &&
                       std::is_move_constructible_v<T> == false &&

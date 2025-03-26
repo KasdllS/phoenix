@@ -38,11 +38,10 @@ class FunctorImpl<RetType(ArgTypes...)> : public Functor {
             std::function<std::decay_t<RetType>(std::decay_t<ArgTypes>...)>)) {}
 
   RetType invoke(ArgTypes&&... args) {
-    if (typeid(
-            std::function<std::decay_t<RetType>(std::decay_t<ArgTypes>...)>) !=
-        type_) {
-      throw std::bad_any_cast();
-    }
+    assert(
+        typeid(
+            std::function<std::decay_t<RetType>(std::decay_t<ArgTypes>...)>) ==
+        type_);
     return func_(std::forward<ArgTypes>(args)...);
   }
 
